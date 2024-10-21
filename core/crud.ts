@@ -1,11 +1,16 @@
 console.log("CRUD START");
+import fs from "fs";
 
-const fs = require("fs");
-const crypto = require("crypto");
 const DB_FILE_PATH = "./core/db";
 
-function create(content) {
-  const noteData = {
+interface noteData {
+  id: string;
+  content: string;
+  createdAt: Date;
+}
+
+function create(content: string) {
+  const noteData: noteData = {
     id: crypto.randomUUID(),
     content,
     createdAt: new Date(),
@@ -17,7 +22,6 @@ function create(content) {
   } else {
     const dbFile = fs.readFileSync(DB_FILE_PATH).toString();
     const data = JSON.parse(dbFile);
-    console.log(data);
 
     data.notes.push(noteData);
 
@@ -37,31 +41,13 @@ function readAll() {
   return data;
 }
 
-function findById(id) {
+function findById(id: string) {
   if (!fs.existsSync(DB_FILE_PATH)) return { staus: 404, message: "Not found" };
 
   const dbFile = fs.readFileSync(DB_FILE_PATH).toString();
   const data = JSON.parse(dbFile);
 
-  console.log(data.notes);
-  const note = data.notes.filter((note) => note.id === id);
+  const note = data.notes.filter((note: noteData) => note.id === id);
 
-  return note;
+  return note[0];
 }
-
-function findById(id) {
-  if (!fs.existsSync(DB_FILE_PATH)) return { staus: 404, message: "Not found" };
-
-  const dbFile = fs.readFileSync(DB_FILE_PATH).toString();
-  const data = JSON.parse(dbFile);
-
-  const note = data.notes.filter((note) => note.id === id);
-
-  return note;
-}
-
-const noteOne = create("Note 1");
-const noteTwo = create("Note 2");
-console.log(findById(noteOne.id));
-console.log(findById(noteTwo.id));
-console.log(readAll());
