@@ -14,8 +14,66 @@ interface IToDo {
   updatedAt: string;
 }
 
+interface IUser {
+  password: string;
+  salt: string;
+  login: string;
+}
+
+function generateSalt() {
+  const salt = new Uint8Array(16);
+  crypto.getRandomValues(salt);
+  return btoa(String.fromCharCode(...salt));
+}
+function createHash(info: string, salt: string) {
+  const hash = crypto
+    .createHash("sha256")
+    .update(info)
+    .update(salt)
+    .digest("hex");
+  return hash;
+}
+
+function verifyString(str: string, min?: number) {
+  if (
+    !str ||
+    typeof str !== "string" ||
+    str.trim() === "" ||
+    (min && str.length < min)
+  ) {
+    throw new Error("Invalid props");
+  }
+}
+
+function createUser(login: string, password: string): IUser {
+  verifyString(login, 3);
+  verifyString(password, 8);
+
+  const db = getDB();
+  const isExistingUser =
+    db.users.findIndex((userInTest) => userInTest.login === login) !== -1;
+
+  if (isExistingUser) {
+    throw new Error("this login is already in use");
+  }
+
+  const salt = generateSalt();
+  const hashedPassword = createHash(password, salt);
+  const newUser: IUser = {
+    login,
+    password: hashedPassword,
+    salt,
+  };
+
+  db.users.push(newUser);
+  updateDB(db);
+
+  return newUser;
+}
+
 interface IDB {
   toDos: IToDo[];
+  users: IUser[];
 }
 
 function getDB(): IDB {
@@ -35,16 +93,14 @@ function updateDB(data: Object): void {
 }
 
 function NEW_DB(): IDB {
-  const newDB = { toDos: [] };
+  const newDB = { toDos: [], users: [] };
 
   updateDB(newDB);
   return newDB;
 }
 
 function createToDo(content: string): IToDo {
-  if (!content || typeof content !== "string" || content.trim() === "") {
-    throw new Error("Invalid content");
-  }
+  verifyString(content);
 
   const toDo: IToDo = {
     id: crypto.randomUUID(),
@@ -122,17 +178,20 @@ function updateContentById(id: string, content: string): IToDo {
 
 NEW_DB();
 
-const toDo = createToDo("To Do");
-console.log("FIRST READ", readAllToDos());
+const user = createUser("DANIEL", "12345678");
+console.log(user);
 
-updateToDo(toDo.id, {
-  content: "TEST",
-  isDone: true,
-});
-console.log("SECOND READ", readAllToDos());
+// const toDo = createToDo("To Do");
+// console.log("FIRST READ", readAllToDos());
 
-changeIsDoneById(toDo.id);
-console.log("THIRD READ", readAllToDos());
+// updateToDo(toDo.id, {
+//   content: "TEST",
+//   isDone: true,
+// });
+// console.log("SECOND READ", readAllToDos());
 
-updateContentById(toDo.id, "TEST 2");
-console.log("FOURTH READ", readAllToDos());
+// changeIsDoneById(toDo.id);
+// console.log("THIRD READ", readAllToDos());
+
+// updateContentById(toDo.id, "TEST 2");
+// console.log("FOURTH READ", readAllToDos());
