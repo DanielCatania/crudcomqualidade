@@ -68,6 +68,21 @@ function generateTokens(user: IUser): ILogin {
   return { accessToken, refreshToken };
 }
 
+function verifyToken(type: "access" | "refresh", token: string) {
+  const key =
+    type === "access" ? process.env.ACCESS_KEY : process.env.REFRESH_KEY;
+
+  if (!key) throw new Error("MISSING KEYS");
+
+  const decodedToken = jwt.verify(token, key, (err, decoded) => {
+    if (err) throw new Error("Invalid Token");
+
+    return decoded;
+  });
+
+  return decodedToken;
+}
+
 function createUser(login: string, password: string): ILogin {
   verifyString(login, 3);
   verifyString(password, 8);
@@ -202,4 +217,7 @@ function updateContentById(id: string, content: string): IToDo {
 NEW_DB();
 
 const user = createUser("DANIEL", "12345678");
+
 console.log(user);
+console.log(verifyToken("access", user.accessToken));
+console.log(verifyToken("refresh", user.refreshToken));
