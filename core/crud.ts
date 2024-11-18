@@ -1,6 +1,10 @@
 console.log("CRUD START");
 import fs from "fs";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const DB_FILE_PATH = "./core/db";
 
@@ -20,11 +24,17 @@ interface IUser {
   login: string;
 }
 
+interface ILogin {
+  accessToken: string;
+  refreshToken: string;
+}
+
 function generateSalt() {
   const salt = new Uint8Array(16);
   crypto.getRandomValues(salt);
   return btoa(String.fromCharCode(...salt));
 }
+
 function createHash(info: string, salt: string) {
   const hash = crypto
     .createHash("sha256")
@@ -45,7 +55,20 @@ function verifyString(str: string, min?: number) {
   }
 }
 
-function createUser(login: string, password: string): IUser {
+function generateTokens(user: IUser): ILogin {
+  const payload = { login: user.login };
+  const refreshKey = process.env.REFRESH_KEY;
+  const accessKey = process.env.ACCESS_KEY;
+
+  if (!refreshKey || !accessKey) throw new Error("MISSING KEYS");
+
+  const accessToken = jwt.sign(payload, accessKey, { expiresIn: "1m" });
+  const refreshToken = jwt.sign(payload, refreshKey, { expiresIn: "7d" });
+
+  return { accessToken, refreshToken };
+}
+
+function createUser(login: string, password: string): ILogin {
   verifyString(login, 3);
   verifyString(password, 8);
 
@@ -68,7 +91,7 @@ function createUser(login: string, password: string): IUser {
   db.users.push(newUser);
   updateDB(db);
 
-  return newUser;
+  return generateTokens(newUser);
 }
 
 interface IDB {
@@ -180,18 +203,3 @@ NEW_DB();
 
 const user = createUser("DANIEL", "12345678");
 console.log(user);
-
-// const toDo = createToDo("To Do");
-// console.log("FIRST READ", readAllToDos());
-
-// updateToDo(toDo.id, {
-//   content: "TEST",
-//   isDone: true,
-// });
-// console.log("SECOND READ", readAllToDos());
-
-// changeIsDoneById(toDo.id);
-// console.log("THIRD READ", readAllToDos());
-
-// updateContentById(toDo.id, "TEST 2");
-// console.log("FOURTH READ", readAllToDos());
