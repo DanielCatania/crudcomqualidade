@@ -10,33 +10,42 @@ const DB_FILE_PATH = "./core/db";
 
 const notFoundError = '{ status: 404, message: "Not found To Do" }';
 
+type UUID = string;
+type jwt = string;
+type DateInString = string;
+
 interface IToDo {
-  userLogin: string;
-  id: string;
+  userID: string;
+  id: UUID;
   content: string;
-  createdAt: string;
+  createdAt: DateInString;
   isDone: boolean;
-  updatedAt: string;
+  updatedAt: DateInString;
 }
 
 interface IUser {
   password: string;
   salt: string;
-  login: string;
+  id: string;
 }
 
 interface ITokens {
-  accessToken: string;
-  refreshToken: string;
+  accessToken: jwt;
+  refreshToken: jwt;
 }
 
-function generateSalt() {
+interface IDB {
+  toDos: IToDo[];
+  users: IUser[];
+}
+
+function generateSalt(): string {
   const salt = new Uint8Array(16);
   crypto.getRandomValues(salt);
   return btoa(String.fromCharCode(...salt));
 }
 
-function createHash(info: string, salt: string) {
+function createHash(info: string, salt: string): string {
   const hash = crypto
     .createHash("sha256")
     .update(info)
@@ -45,19 +54,20 @@ function createHash(info: string, salt: string) {
   return hash;
 }
 
-function verifyString(str: string, min?: number) {
+function verifyString(str: string, min?: number, max?: number): void {
   if (
     !str ||
     typeof str !== "string" ||
     str.trim() === "" ||
-    (min && str.length < min)
+    (min && str.length < min) ||
+    (max && str.length > max)
   ) {
     throw new Error("Invalid props");
   }
 }
 
-function generateTokens(login: string): ITokens {
-  const payload = { login };
+function generateTokens(id: string): ITokens {
+  const payload = { id };
   const refreshKey = process.env.REFRESH_KEY;
   const accessKey = process.env.ACCESS_KEY;
 
@@ -80,7 +90,7 @@ function verifyToken(type: "access" | "refresh", token: string) {
   });
   const decodedToken = jwt.decode(token) as JwtPayload;
 
-  return decodedToken.login;
+  return decodedToken.id;
 }
 
 function validateUserPassword(user: IUser, password: string) {
@@ -88,46 +98,44 @@ function validateUserPassword(user: IUser, password: string) {
   if (hashedPassword !== user.password) throw new Error("ACCESS DENIED");
 }
 
-function getUserByLogin(login: string) {
+function getUserByID(id: string) {
   const db = getDB();
-  const userIndex = db.users.findIndex(
-    (userInTest) => userInTest.login === login
-  );
+  const userIndex = db.users.findIndex((userInTest) => userInTest.id === id);
 
   if (userIndex === -1) throw new Error(notFoundError);
 
   return { user: db.users[userIndex], index: userIndex };
 }
 
-function getTokens(credentials: { login: string; password: string } | string) {
+function getTokens(credentials: { id: string; password: string } | string) {
   if (typeof credentials === "string") {
-    const login = verifyToken("refresh", credentials);
+    const id = verifyToken("refresh", credentials);
 
-    getUserByLogin(login);
+    getUserByID(id);
 
-    return generateTokens(login);
+    return generateTokens(id);
   }
 
-  const { user } = getUserByLogin(credentials.login);
+  const { user } = getUserByID(credentials.id);
 
   validateUserPassword(user, credentials.password);
 
-  return generateTokens(credentials.login);
+  return generateTokens(credentials.id);
 }
 
-function createUser(login: string, password: string): ITokens {
-  verifyString(login, 3);
+function createUser(id: string, password: string): ITokens {
+  verifyString(id, 3, 8);
   verifyString(password, 8);
 
   try {
-    getUserByLogin(login);
+    getUserByID(id);
   } catch (err) {
     const db = getDB();
 
     const salt = generateSalt();
     const hashedPassword = createHash(password, salt);
     const newUser: IUser = {
-      login,
+      id,
       password: hashedPassword,
       salt,
     };
@@ -135,14 +143,9 @@ function createUser(login: string, password: string): ITokens {
     db.users.push(newUser);
     updateDB(db);
 
-    return generateTokens(login);
+    return generateTokens(id);
   }
-  throw new Error("this login is already in use");
-}
-
-interface IDB {
-  toDos: IToDo[];
-  users: IUser[];
+  throw new Error("this id is already in use");
 }
 
 function getDB(): IDB {
@@ -156,7 +159,7 @@ function getDB(): IDB {
   }
 }
 
-function updateDB(data: Object): void {
+function updateDB(data: IDB): void {
   if (typeof data !== "object") throw new Error("the DB must be a json object");
   fs.writeFileSync(DB_FILE_PATH, JSON.stringify(data, null, 2));
 }
@@ -170,10 +173,10 @@ function NEW_DB(): IDB {
 
 function createToDo(content: string, accessToken: string): IToDo {
   verifyString(content);
-  const userLogin = verifyToken("access", accessToken);
+  const userID = verifyToken("access", accessToken);
 
   const toDo: IToDo = {
-    userLogin,
+    userID,
     id: crypto.randomUUID(),
     content,
     createdAt: new Date().toISOString(),
@@ -190,26 +193,27 @@ function createToDo(content: string, accessToken: string): IToDo {
 }
 
 function readAllToDos(accessToken: string): IToDo[] {
-  const userLogin = verifyToken("access", accessToken);
+  const userID = verifyToken("access", accessToken);
 
   const db = getDB();
-  const toDos = db.toDos.filter(
-    (toDoInTest) => toDoInTest.userLogin === userLogin
-  );
+  const toDos = db.toDos.filter((toDoInTest) => toDoInTest.userID === userID);
 
   return toDos;
 }
 
 function findToDoById(id: string, accessToken: string): IToDo | null {
-  const userLogin = verifyToken("access", accessToken);
+  const userID = verifyToken("access", accessToken);
 
   const db = getDB();
 
-  const toDoSelected = db.toDos.find((toDo: IToDo) => toDo.id === id);
-  if (toDoSelected && toDoSelected.userLogin !== userLogin)
-    throw new Error("ACCESS DENIED");
+  const toDoSelected = db.toDos.find((toDo: IToDo) => toDo.id === id) || null;
+  verifyToDoOwner(toDoSelected, userID);
 
-  return toDoSelected || null;
+  return toDoSelected;
+}
+
+function verifyToDoOwner(toDo: IToDo | null, userID: string) {
+  if (toDo && toDo.userID !== userID) throw new Error("ACCESS DENIED");
 }
 
 function updateToDo(
@@ -217,10 +221,10 @@ function updateToDo(
   toDoUpdates: Partial<IToDo>,
   accessToken: string
 ): IToDo {
-  if (toDoUpdates.id || toDoUpdates.createdAt || toDoUpdates.userLogin)
-    throw new Error("you can't update the id, userLogin and createdAt field");
+  if (toDoUpdates.id || toDoUpdates.createdAt || toDoUpdates.userID)
+    throw new Error("you can't update the id, userID and createdAt field");
 
-  const userLogin = verifyToken("access", accessToken);
+  const userID = verifyToken("access", accessToken);
 
   const db = getDB();
   const toDoSelected = db.toDos.findIndex((toDo: IToDo) => toDo.id === id);
@@ -228,8 +232,7 @@ function updateToDo(
   if (toDoSelected === -1) throw new Error(notFoundError);
 
   const currentToDo = db.toDos[toDoSelected];
-  if (currentToDo && currentToDo.userLogin !== userLogin)
-    throw new Error("ACCESS DENIED");
+  verifyToDoOwner(currentToDo, userID);
   const updatedToDo: IToDo = {
     ...currentToDo,
     ...toDoUpdates,
@@ -243,7 +246,7 @@ function updateToDo(
 }
 
 function changeIsDoneById(id: string, accessToken: string): IToDo {
-  const userLogin = verifyToken("access", accessToken);
+  const userID = verifyToken("access", accessToken);
 
   const db = getDB();
   const toDoIndex = db.toDos.findIndex((toDo: IToDo) => toDo.id === id);
@@ -251,8 +254,7 @@ function changeIsDoneById(id: string, accessToken: string): IToDo {
   if (toDoIndex === -1) throw new Error(notFoundError);
 
   const currentToDo = db.toDos[toDoIndex];
-  if (currentToDo && currentToDo.userLogin !== userLogin)
-    throw new Error("ACCESS DENIED");
+  verifyToDoOwner(currentToDo, userID);
   const updatedToDo: IToDo = {
     ...currentToDo,
     isDone: !currentToDo.isDone,
@@ -273,6 +275,16 @@ function updateContentById(
   return updateToDo(id, { content }, accessToken);
 }
 
+function deleteToDoById(id: string, accessToken: string) {
+  const toDo = findToDoById(id, accessToken);
+
+  if (!toDo) throw new Error(notFoundError);
+
+  const db = getDB();
+  db.toDos = db.toDos.filter((toDoInTest) => toDoInTest.id !== toDo.id);
+  updateDB(db);
+}
+
 //test
 NEW_DB();
 
@@ -280,19 +292,7 @@ const user = createUser("DANIEL", "12345678");
 
 createToDo("TEST 1", user.accessToken);
 const toDo = createToDo("TEST 2", user.accessToken);
+console.log(readAllToDos(user.accessToken));
 
-console.log("READ ALL", readAllToDos(user.accessToken));
-updateContentById(toDo.id, "TEST 4", user.accessToken);
-console.log("FIND BY ID", findToDoById(toDo.id, user.accessToken));
-
-setTimeout(() => {
-  try {
-    console.log(createToDo("TEST 3", user.accessToken));
-  } catch (error) {
-    console.log(error);
-    const newTokens = getTokens(user.refreshToken);
-    console.log("NEW TOKENS", newTokens);
-
-    createToDo("TEST 3", newTokens.accessToken);
-  }
-}, 60002);
+deleteToDoById(toDo.id, user.accessToken);
+console.log(readAllToDos(user.accessToken));
